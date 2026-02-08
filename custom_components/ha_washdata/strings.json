@@ -415,6 +415,113 @@
       "no_predictions": "No predictions",
       "reprocess_success": "Successfully reprocessed {count} cycles.",
       "debug_data_cleared": "Successfully cleared debug data from {count} cycles."
+    },
+    "label": {
+      "review_learning_feedbacks": "Review Learning Feedbacks",
+      "review_learning_feedbacks_count": "({count}) Review Learning Feedbacks",
+      "unlabeled": "Unlabeled",
+      "unlabeled_option": "(Unlabeled)",
+      "no_reference_cycle_option": "(No reference cycle)",
+      "editor_select_info": "Select 1 cycle to split, or 2+ cycles to merge.",
+      "cycle_label": "{start} - {duration}m - {profile}",
+      "cycle_status_label": "[{status_icon}] {start} - {duration}m - {profile}",
+      "split_preview_md": "### Split Preview\nFound {count} segments.\n![Preview]({data_uri})\n\nClick Confirm to split this cycle into {count} separate cycles.",
+      "merge_preview_md": "### Merge Preview\nJoining {count} cycles. Gaps will be filled with 0W readings.\n![Preview]({data_uri})",
+      "storage_usage_title": "Storage Usage:",
+      "storage_usage_file_size": "- File Size: {size} KB",
+      "storage_usage_cycles": "- Cycles: {count}",
+      "storage_usage_profiles": "- Profiles: {count}",
+      "storage_usage_debug_traces": "- Debug Traces: {count}",
+      "recent_cycle_line": "{status_icon} {start} - {duration}m - {profile}",
+      "no_cycles_recorded": "No cycles recorded yet.",
+      "profile_summary_line": "- **{name}**: {count} cycles, {avg}m avg",
+      "no_profiles_created": "No profiles created yet.",
+      "profile_option_avg": "{name} ({count} cycles, ~{duration}m avg)",
+      "profile_option": "{name} ({count} cycles, ~{duration}m)",
+      "cleanup_deleted_info": "Deleted {count} cycles from {profile}.",
+      "cleanup_no_data": "Not enough data to generate graph.",
+      "status_icon_completed": "✓",
+      "status_icon_resumed": "⚠",
+      "status_icon_interrupted": "✗",
+      "energy_suffix": " | {energy} kWh",
+      "cleanup_cycle_label": "{color} {status_icon} {start} - {duration}m{energy}",
+      "profile_stats_table_header": "| Count | Avg | Min | Max | Energy (Avg) | Energy (Total) | Consist. | Last Run |",
+      "profile_stats_table_sep": "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "profile_stats_table_row": "| {count} | {avg}m | {min}m | {max}m | {energy_avg} kWh | {energy_total} kWh | {consistency} | {last_run} |",
+      "profile_stats_legend": "> **Graph Legend**: The blue band represents the minimum and maximum power draw range observed. The line shows the average power curve.",
+      "no_profiles_found": "No profiles found.",
+      "delete_profile_warning": "⚠️ This will permanently delete the profile.",
+      "delete_cycle_warning": "⚠️ This will permanently delete the selected cycle",
+      "auto_label_info": "Found {count} total cycles. Profiles: {profiles}",
+      "create_new_profile": "Create New Profile",
+      "create_new_profile_option": "Create New Profile...",
+      "remove_label": "Remove Label",
+      "cycle_info": "Cycle: {start}, {duration}m, Current: {profile}",
+      "post_process_result": "Merged: {merged}, Split: {split}",
+      "record_status_active": "ACTIVE",
+      "record_status_stopped": "STOPPED",
+      "record_status_ready": "READY TO PROCESS",
+      "unknown_profile": "Unknown",
+      "feedback_item_label": "{profile} ({confidence}%) - {timestamp}",
+      "no_suggestions_available": "No suggestions available yet.",
+      "reprocess_warning": "This will recalculate all cycle signatures and rebuild profile models (envelopes) using the latest logic.\n\nRaw cycle data is preserved. This may take a moment for large histories."
+    }
+  },
+  "selector": {
+    "device_type": {
+      "washing_machine": "Washing Machine",
+      "dryer": "Dryer",
+      "washer_dryer": "Washer-Dryer Combo",
+      "dishwasher": "Dishwasher",
+      "coffee_machine": "Coffee Machine"
+    },
+    "notify_events": {
+      "cycle_start": "Cycle Start",
+      "cycle_finish": "Cycle Finish"
+    },
+    "export_import_mode": {
+      "export": "Export only",
+      "import": "Import from JSON"
+    },
+    "interactive_editor_action": {
+      "split": "Split a Cycle (Find gaps)",
+      "merge": "Merge Cycles (Join fragments)"
+    },
+    "manage_cycles_action": {
+      "auto_label_cycles": "Auto-Label Old Cycles",
+      "select_cycle_to_label": "Label Specific Cycle",
+      "select_cycle_to_delete": "Delete Cycle",
+      "interactive_editor": "Merge/Split Interactive Editor"
+    },
+    "manage_profiles_action": {
+      "create_profile": "Create New Profile",
+      "edit_profile": "Edit/Rename Profile",
+      "delete_profile": "Delete Profile",
+      "profile_stats": "Profile Statistics",
+      "cleanup_profile": "Clean Up History - Graph & Delete"
+    },
+    "diagnostics_action": {
+      "reprocess_history": "Maintenance: Reprocess & Optimize Data",
+      "clear_debug_data": "Clear Debug Data (Free up space)",
+      "wipe_history": "Wipe ALL data for this device (irreversible)",
+      "export_import": "Export/Import JSON with settings (copy/paste)"
+    },
+    "record_cycle_action": {
+      "refresh_status": "Refresh Status",
+      "stop_recording": "Stop Recording (Save & Process)",
+      "start_recording": "Start New Recording",
+      "process_recording": "Process Last Recording (Trim & Save)",
+      "discard_recording": "Discard Last Recording"
+    },
+    "record_process_mode": {
+      "new_profile": "Create New Profile",
+      "existing_profile": "Add to Existing Profile",
+      "discard": "Discard Recording"
+    },
+    "feedback_action": {
+      "confirm": "Confirm (detection was correct)",
+      "correct": "Correct (change profile/duration)",
+      "dismiss": "Dismiss (ignore this feedback)"
     }
   },
   "entity": {

@@ -411,6 +411,113 @@
       "no_predictions": "Aucune prédiction",
       "reprocess_success": "{count} cycles retraités avec succès.",
       "debug_data_cleared": "Données de débogage supprimées avec succès de {count} cycles."
+    },
+    "label": {
+      "review_learning_feedbacks": "Examiner les retours d'apprentissage",
+      "review_learning_feedbacks_count": "({count}) Examiner les retours d'apprentissage",
+      "unlabeled": "Non étiqueté",
+      "unlabeled_option": "(Non étiqueté)",
+      "no_reference_cycle_option": "(Aucun cycle de référence)",
+      "editor_select_info": "Sélectionnez 1 cycle à scinder ou 2+ cycles à fusionner.",
+      "cycle_label": "{start} - {duration}m - {profile}",
+      "cycle_status_label": "[{status_icon}] {start} - {duration}m - {profile}",
+      "split_preview_md": "### Aperçu de scission\n{count} segments trouvés.\n![Preview]({data_uri})\n\nCliquez sur Confirmer pour scinder ce cycle en {count} cycles séparés.",
+      "merge_preview_md": "### Aperçu de fusion\nFusion de {count} cycles. Les intervalles seront remplis avec des lectures 0W.\n![Preview]({data_uri})",
+      "storage_usage_title": "Utilisation du stockage :",
+      "storage_usage_file_size": "- Taille du fichier : {size} KB",
+      "storage_usage_cycles": "- Cycles : {count}",
+      "storage_usage_profiles": "- Profils : {count}",
+      "storage_usage_debug_traces": "- Traces de débogage : {count}",
+      "recent_cycle_line": "{status_icon} {start} - {duration}m - {profile}",
+      "no_cycles_recorded": "Aucun cycle enregistré pour le moment.",
+      "profile_summary_line": "- **{name}** : {count} cycles, {avg}m moy",
+      "no_profiles_created": "Aucun profil créé pour le moment.",
+      "profile_option_avg": "{name} ({count} cycles, ~{duration}m moy)",
+      "profile_option": "{name} ({count} cycles, ~{duration}m)",
+      "cleanup_deleted_info": "{count} cycles supprimés de {profile}.",
+      "cleanup_no_data": "Pas assez de données pour générer le graphique.",
+      "status_icon_completed": "✓",
+      "status_icon_resumed": "⚠",
+      "status_icon_interrupted": "✗",
+      "energy_suffix": " | {energy} kWh",
+      "cleanup_cycle_label": "{color} {status_icon} {start} - {duration}m{energy}",
+      "profile_stats_table_header": "| Nombre | Moy | Min | Max | Énergie (moy) | Énergie (totale) | Consistance | Dernier cycle |",
+      "profile_stats_table_sep": "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "profile_stats_table_row": "| {count} | {avg}m | {min}m | {max}m | {energy_avg} kWh | {energy_total} kWh | {consistency} | {last_run} |",
+      "profile_stats_legend": "> **Légende du graphique** : la bande bleue représente le minimum et le maximum observés. La ligne montre la courbe moyenne de puissance.",
+      "no_profiles_found": "Aucun profil trouvé.",
+      "delete_profile_warning": "⚠️ Ceci supprimera définitivement le profil.",
+      "delete_cycle_warning": "⚠️ Ceci supprimera définitivement le cycle sélectionné",
+      "auto_label_info": "{count} cycles trouvés au total. Profils : {profiles}",
+      "create_new_profile": "Créer un nouveau profil",
+      "create_new_profile_option": "Créer un nouveau profil...",
+      "remove_label": "Retirer l'étiquette",
+      "cycle_info": "Cycle : {start}, {duration}m, Actuel : {profile}",
+      "post_process_result": "Fusionnés : {merged}, Scindés : {split}",
+      "record_status_active": "ACTIF",
+      "record_status_stopped": "ARRÊTÉ",
+      "record_status_ready": "PRÊT À TRAITER",
+      "unknown_profile": "Inconnu",
+      "feedback_item_label": "{profile} ({confidence}%) - {timestamp}",
+      "no_suggestions_available": "Aucune suggestion disponible pour le moment.",
+      "reprocess_warning": "Cela recalculera toutes les signatures de cycle et reconstruira les modèles de profil (enveloppes) avec la logique la plus récente.\n\nLes données brutes du cycle sont conservées. Cela peut prendre un moment pour les historiques volumineux."
+    }
+  },
+  "selector": {
+    "device_type": {
+      "washing_machine": "Machine à laver",
+      "dryer": "Sèche-linge",
+      "washer_dryer": "Lave-linge séchant",
+      "dishwasher": "Lave-vaisselle",
+      "coffee_machine": "Machine à café"
+    },
+    "notify_events": {
+      "cycle_start": "Début de cycle",
+      "cycle_finish": "Fin de cycle"
+    },
+    "export_import_mode": {
+      "export": "Exporter uniquement",
+      "import": "Importer depuis JSON"
+    },
+    "interactive_editor_action": {
+      "split": "Scinder un cycle (trouver les pauses)",
+      "merge": "Fusionner des cycles (joindre les fragments)"
+    },
+    "manage_cycles_action": {
+      "auto_label_cycles": "Auto-étiqueter les anciens cycles",
+      "select_cycle_to_label": "Étiqueter un cycle spécifique",
+      "select_cycle_to_delete": "Supprimer un cycle",
+      "interactive_editor": "Éditeur interactif fusion/scission"
+    },
+    "manage_profiles_action": {
+      "create_profile": "Créer un nouveau profil",
+      "edit_profile": "Modifier/Renommer le profil",
+      "delete_profile": "Supprimer le profil",
+      "profile_stats": "Statistiques du profil",
+      "cleanup_profile": "Nettoyer l'historique - Graphique et suppression"
+    },
+    "diagnostics_action": {
+      "reprocess_history": "Maintenance : retraiter et optimiser les données",
+      "clear_debug_data": "Effacer les données de débogage (libérer de l'espace)",
+      "wipe_history": "Effacer TOUTES les données pour cet appareil (irréversible)",
+      "export_import": "Exporter/Importer JSON avec paramètres (copier/coller)"
+    },
+    "record_cycle_action": {
+      "refresh_status": "Rafraîchir le statut",
+      "stop_recording": "Arrêter l'enregistrement (sauver et traiter)",
+      "start_recording": "Démarrer un nouvel enregistrement",
+      "process_recording": "Traiter le dernier enregistrement (rogner et sauvegarder)",
+      "discard_recording": "Ignorer l'enregistrement"
+    },
+    "record_process_mode": {
+      "new_profile": "Créer un nouveau profil",
+      "existing_profile": "Ajouter à un profil existant",
+      "discard": "Ignorer l'enregistrement"
+    },
+    "feedback_action": {
+      "confirm": "Confirmer (détection correcte)",
+      "correct": "Corriger (changer profil/durée)",
+      "dismiss": "Ignorer (ne pas tenir compte)"
     }
   },
   "entity": {

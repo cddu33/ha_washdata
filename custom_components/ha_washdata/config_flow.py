@@ -16,6 +16,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
+from homeassistant.helpers import translation as translation_helper
 from homeassistant.util import slugify
 from homeassistant.util import dt as dt_util
 
@@ -113,10 +114,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
             CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value=k, label=v)
-                    for k, v in DEVICE_TYPES.items()
-                ],
+                options=list(DEVICE_TYPES),
+                translation_key="device_type",
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )
         ),
@@ -234,6 +233,29 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._editor_action: str | None = None
         self._editor_selected_ids: list[str] = []
         self._editor_split_gap: int = 900
+        self._translations: dict[str, str] | None = None
+
+    async def _async_get_translations(self) -> dict[str, str]:
+        """Return cached translations for options flow."""
+        if self._translations is None:
+            self._translations = await translation_helper.async_get_translations(
+                self.hass,
+                self.hass.config.language,
+                "options",
+                [DOMAIN],
+            )
+        return self._translations
+
+    async def _t(self, key: str, **placeholders: Any) -> str:
+        """Translate a key from the options category with placeholders."""
+        translations = await self._async_get_translations()
+        text = translations.get(key, key)
+        if placeholders:
+            try:
+                return text.format(**placeholders)
+            except Exception:  # pylint: disable=broad-exception-caught
+                return text
+        return text
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None  # pylint: disable=unused-argument
@@ -242,18 +264,29 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         # Check for pending feedbacks to show count
         manager = self.hass.data[DOMAIN][self._config_entry.entry_id]
         pending_count = len(manager.profile_store.get_pending_feedback())
-        
-        feedback_label = "Review Learning Feedbacks"
+
+        feedback_label = await self._t("options.label.review_learning_feedbacks")
         if pending_count > 0:
-            feedback_label = f"({pending_count}) Review Learning Feedbacks"
+            feedback_label = await self._t(
+                "options.label.review_learning_feedbacks_count",
+                count=pending_count,
+            )
 
         menu_options = {
-            "settings": "Settings",
-            "manage_cycles": "Manage Cycles",
-            "manage_profiles": "Manage Profiles",
-            "record_cycle": "Record Cycle (Manual)",
+            "settings": await self._t("options.step.init.menu_options.settings"),
+            "manage_cycles": await self._t(
+                "options.step.init.menu_options.manage_cycles"
+            ),
+            "manage_profiles": await self._t(
+                "options.step.init.menu_options.manage_profiles"
+            ),
+            "record_cycle": await self._t(
+                "options.step.init.menu_options.record_cycle"
+            ),
             "learning_feedbacks": feedback_label,
-            "diagnostics": "Diagnostics & Maintenance",
+            "diagnostics": await self._t(
+                "options.step.init.menu_options.diagnostics"
+            ),
         }
         
         # User requested feedback review to be near the bottom (above diagnostics)
@@ -334,10 +367,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 default=get_val(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value=k, label=v)
-                        for k, v in DEVICE_TYPES.items()
-                    ],
+                    options=list(DEVICE_TYPES),
+                    translation_key="device_type",
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             ),
@@ -371,14 +402,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 default=list(get_val(CONF_NOTIFY_EVENTS, [])),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value=NOTIFY_EVENT_START, label="Cycle Start"
-                        ),
-                        selector.SelectOptionDict(
-                            value=NOTIFY_EVENT_FINISH, label="Cycle Finish"
-                        ),
-                    ],
+                    options=[NOTIFY_EVENT_START, NOTIFY_EVENT_FINISH],
+                    translation_key="notify_events",
                     multiple=True,
                     mode=selector.SelectSelectorMode.LIST,
                 )
@@ -798,7 +823,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=data_schema,
             description_placeholders={
                 "error": "",
-                "suggested": suggested_reason or "No suggestions available yet.",
+                "suggested": suggested_reason
+                or await self._t("options.label.no_suggestions_available"),
                 "suggested_min_power": _fmt_suggested(CONF_MIN_POWER),
                 "suggested_off_delay": _fmt_suggested(CONF_OFF_DELAY),
                 "suggested_watchdog_interval": _fmt_suggested(CONF_WATCHDOG_INTERVAL),
@@ -851,11 +877,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             step_id="interactive_editor",
             data_schema=vol.Schema(
                 {
-                    vol.Required("action"): vol.In(
-                        {
-                            "split": "✂️ Split a Cycle (Find gaps)",
-                            "merge": "🔗 Merge Cycles (Join fragments)",
-                        }
+                    vol.Required("action"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=["split", "merge"],
+                            translation_key="interactive_editor_action",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
                     )
                 }
             ),
@@ -890,14 +917,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         # Build options (Recent 50 cycles)
         cycles = store.get_past_cycles()[-50:]
         cycles.sort(key=lambda x: x["start_time"], reverse=True)
-        
+
+        unlabeled_label = await self._t("options.label.unlabeled")
         options = []
         for c in cycles:
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
             duration_min = int(c["duration"] / 60)
-            prof = c.get("profile_name") or "Unlabeled"
-            label = f"{start} - {duration_min}m - {prof}"
+            prof = c.get("profile_name") or unlabeled_label
+            label = await self._t(
+                "options.label.cycle_label",
+                start=start,
+                duration=duration_min,
+                profile=prof,
+            )
             options.append(selector.SelectOptionDict(value=c["id"], label=label))
 
         return self.async_show_form(
@@ -915,7 +948,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ),
             errors=errors,
             description_placeholders={
-                "info_text": "Select 1 cycle to split, or 2+ cycles to merge."
+                "info_text": await self._t("options.label.editor_select_info")
             }
         )
 
@@ -1021,19 +1054,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             # Generate SVG
             svg = store.generate_interactive_split_svg(cycle["id"], segments)
             b64 = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-            
-            preview_md = f"""
-### Split Preview
-Found {len(segments)} segments.
-![Preview](data:image/svg+xml;base64,{b64})
 
-Click Confirm to split this cycle into {len(segments)} separate cycles.
-"""
+            preview_md = await self._t(
+                "options.label.split_preview_md",
+                count=len(segments),
+                data_uri=f"data:image/svg+xml;base64,{b64}",
+            )
             schema = {vol.Required("confirm_commit"): bool}
             
             # Add profile pickers for each segment
             profiles = store.list_profiles()
-            prof_options = [selector.SelectOptionDict(value="none", label="(Unlabeled)")]
+            prof_options = [
+                selector.SelectOptionDict(
+                    value="none",
+                    label=await self._t("options.label.unlabeled_option"),
+                )
+            ]
             for p in profiles:
                 prof_options.append(selector.SelectOptionDict(value=p["name"], label=p["name"]))
 
@@ -1056,8 +1092,14 @@ Click Confirm to split this cycle into {len(segments)} separate cycles.
             # Profile Selector
             profiles = store.list_profiles()
             prof_options = [
-                selector.SelectOptionDict(value="create_new", label="➕ Create New Profile..."),
-                selector.SelectOptionDict(value="none", label="(Unlabeled)")
+                selector.SelectOptionDict(
+                    value="create_new",
+                    label=await self._t("options.label.create_new_profile_option"),
+                ),
+                selector.SelectOptionDict(
+                    value="none",
+                    label=await self._t("options.label.unlabeled_option"),
+                ),
             ]
             for p in profiles:
                 prof_options.append(selector.SelectOptionDict(value=p["name"], label=p["name"]))
@@ -1065,11 +1107,11 @@ Click Confirm to split this cycle into {len(segments)} separate cycles.
             # Guess best profile?
             default_prof = cycles_to_merge[0].get("profile_name") or "none"
 
-            preview_md = f"""
-### Merge Preview
-Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
-![Preview](data:image/svg+xml;base64,{b64})
-"""
+            preview_md = await self._t(
+                "options.label.merge_preview_md",
+                count=len(cycles_to_merge),
+                data_uri=f"data:image/svg+xml;base64,{b64}",
+            )
             schema = {
                 vol.Optional("merged_profile", default=default_prof): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=prof_options, mode=selector.SelectSelectorMode.DROPDOWN)
@@ -1107,27 +1149,52 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         stats = await manager.profile_store.get_storage_stats()
 
         # Format stats string
-        stats_str = "Storage Usage:\n"
+        stats_lines = [await self._t("options.label.storage_usage_title")]
         if "file_size_kb" in stats:
-            stats_str += f"- File Size: {stats.get('file_size_kb', 0):.1f} KB\n"
-        stats_str += f"- Cycles: {stats.get('total_cycles', 0)}\n"
-        stats_str += f"- Profiles: {stats.get('total_profiles', 0)}\n"
+            stats_lines.append(
+                await self._t(
+                    "options.label.storage_usage_file_size",
+                    size=f"{stats.get('file_size_kb', 0):.1f}",
+                )
+            )
+        stats_lines.append(
+            await self._t(
+                "options.label.storage_usage_cycles",
+                count=stats.get("total_cycles", 0),
+            )
+        )
+        stats_lines.append(
+            await self._t(
+                "options.label.storage_usage_profiles",
+                count=stats.get("total_profiles", 0),
+            )
+        )
         if stats.get("debug_traces_count", 0) > 0:
-            stats_str += f"- Debug Traces: {stats.get('debug_traces_count', 0)}\n"
+            stats_lines.append(
+                await self._t(
+                    "options.label.storage_usage_debug_traces",
+                    count=stats.get("debug_traces_count", 0),
+                )
+            )
+
+        stats_str = "\n".join(stats_lines)
 
         return self.async_show_form(
             step_id="diagnostics",
             description_placeholders={"storage_stats": stats_str},
             data_schema=vol.Schema(
                 {
-                    vol.Required("action"): vol.In(
-                        {
-
-                            "reprocess_history": "Maintenance: Reprocess & Optimize Data",
-                            "clear_debug_data": "Clear Debug Data (Free up space)",
-                            "wipe_history": "Wipe ALL data for this device (irreversible)",
-                            "export_import": "Export/Import JSON with settings (copy/paste)",
-                        }
+                    vol.Required("action"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                "reprocess_history",
+                                "clear_debug_data",
+                                "wipe_history",
+                                "export_import",
+                            ],
+                            translation_key="diagnostics_action",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
                     )
                 }
             ),
@@ -1167,11 +1234,7 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             step_id="reprocess_history",
             data_schema=vol.Schema({}),
             description_placeholders={
-                "warning": (
-                    "This will recalculate all cycle signatures and rebuild profile "
-                    "models (envelopes) using the latest logic.\n\nRaw cycle data is preserved. "
-                    "This may take a moment for large histories."
-                )
+                "warning": await self._t("options.label.reprocess_warning")
             },
         )
 
@@ -1241,14 +1304,8 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                                     "mode", default=mode
                                 ): selector.SelectSelector(
                                     selector.SelectSelectorConfig(
-                                        options=[
-                                            selector.SelectOptionDict(
-                                                value="export", label="Export only"
-                                            ),
-                                            selector.SelectOptionDict(
-                                                value="import", label="Import from JSON"
-                                            ),
-                                        ]
+                                        options=["export", "import"],
+                                        translation_key="export_import_mode",
                                     )
                                 ),
                                 vol.Optional(
@@ -1269,14 +1326,8 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                 {
                     vol.Required("mode", default="export"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="export", label="Export only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="import", label="Import from JSON"
-                                ),
-                            ]
+                            options=["export", "import"],
+                            translation_key="export_import_mode",
                         )
                     ),
                     vol.Optional(
@@ -1298,20 +1349,38 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         # Build recent cycles list
         recent_cycles = store.get_past_cycles()[-8:]
         recent_lines = []
+        unlabeled_label = await self._t("options.label.unlabeled")
+        status_icon_completed = await self._t("options.label.status_icon_completed")
+        status_icon_resumed = await self._t("options.label.status_icon_resumed")
+        status_icon_interrupted = await self._t(
+            "options.label.status_icon_interrupted"
+        )
         for c in reversed(recent_cycles):
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
             duration_min = int(c["duration"] / 60)
-            prof = c.get("profile_name") or "Unlabeled"
+            prof = c.get("profile_name") or unlabeled_label
             status = c.get("status", "completed")
             status_icon = (
-                "✓"
+                status_icon_completed
                 if status in ("completed", "force_stopped")
-                else "⚠" if status == "resumed" else "✗"
+                else status_icon_resumed
+                if status == "resumed"
+                else status_icon_interrupted
             )
-            recent_lines.append(f"{status_icon} {start} - {duration_min}m - {prof}")
+            recent_lines.append(
+                await self._t(
+                    "options.label.recent_cycle_line",
+                    status_icon=status_icon,
+                    start=start,
+                    duration=duration_min,
+                    profile=prof,
+                )
+            )
         recent_text = (
-            "\n".join(recent_lines) if recent_lines else "No cycles recorded yet."
+            "\n".join(recent_lines)
+            if recent_lines
+            else await self._t("options.label.no_cycles_recorded")
         )
 
         if user_input is not None:
@@ -1333,13 +1402,17 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             step_id="manage_cycles",
             data_schema=vol.Schema(
                 {
-                    vol.Required("action"): vol.In(
-                        {
-                            "auto_label_cycles": "🤖 Auto-Label Old Cycles",
-                            "select_cycle_to_label": "🏷️ Label Specific Cycle",
-                            "select_cycle_to_delete": "🗑️ Delete Cycle",
-                            "interactive_editor": "✂️ Merge/Split Interactive Editor",
-                        }
+                    vol.Required("action"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                "auto_label_cycles",
+                                "select_cycle_to_label",
+                                "select_cycle_to_delete",
+                                "interactive_editor",
+                            ],
+                            translation_key="manage_cycles_action",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
                     )
                 }
             ),
@@ -1361,9 +1434,18 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         for p in profiles:
             count = p["cycle_count"]
             avg = int(p["avg_duration"] / 60) if p["avg_duration"] else 0
-            summary_lines.append(f"- **{p['name']}**: {count} cycles, {avg}m avg")
+            summary_lines.append(
+                await self._t(
+                    "options.label.profile_summary_line",
+                    name=p["name"],
+                    count=count,
+                    avg=avg,
+                )
+            )
         summary_text = (
-            "\n".join(summary_lines) if summary_lines else "No profiles created yet."
+            "\n".join(summary_lines)
+            if summary_lines
+            else await self._t("options.label.no_profiles_created")
         )
 
         if user_input is not None:
@@ -1383,14 +1465,18 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             step_id="manage_profiles",
             data_schema=vol.Schema(
                 {
-                    vol.Required("action"): vol.In(
-                        {
-                            "create_profile": "➕ Create New Profile",
-                            "edit_profile": "✏️ Edit/Rename Profile",
-                            "delete_profile": "🗑️ Delete Profile",
-                            "profile_stats": "📊 Profile Statistics",
-                            "cleanup_profile": "🧹 Clean Up History - Graph & Delete",
-                        }
+                    vol.Required("action"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                "create_profile",
+                                "edit_profile",
+                                "delete_profile",
+                                "profile_stats",
+                                "cleanup_profile",
+                            ],
+                            translation_key="manage_profiles_action",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
                     )
                 }
             ),
@@ -1417,7 +1503,12 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         for p in profiles:
             count = p["cycle_count"]
             duration_min = int(p["avg_duration"] / 60) if p["avg_duration"] else 0
-            label = f"{p['name']} ({count} cycles, ~{duration_min}m avg)"
+            label = await self._t(
+                "options.label.profile_option_avg",
+                name=p["name"],
+                count=count,
+                duration=duration_min,
+            )
             options.append(selector.SelectOptionDict(value=p["name"], label=label))
 
         return self.async_show_form(
@@ -1454,7 +1545,11 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                 title="",
                 data=dict(self.config_entry.options),
                 description_placeholders={
-                    "info": f"Deleted {count} cycles from {self._selected_profile}."
+                    "info": await self._t(
+                        "options.label.cleanup_deleted_info",
+                        count=count,
+                        profile=self._selected_profile,
+                    )
                 },
             )
 
@@ -1476,7 +1571,9 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         if not svg_content:
             return self.async_abort(
                 reason="no_cycles_found",
-                description_placeholders={"info": "Not enough data to generate graph."},
+                description_placeholders={
+                    "info": await self._t("options.label.cleanup_no_data")
+                },
             )
 
         file_path = f"{stats_dir}/cleanup_{safe_name}.svg"
@@ -1523,6 +1620,11 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         }
 
         options = []
+        status_icon_completed = await self._t("options.label.status_icon_completed")
+        status_icon_resumed = await self._t("options.label.status_icon_resumed")
+        status_icon_interrupted = await self._t(
+            "options.label.status_icon_interrupted"
+        )
         for c in profile_cycles:
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
@@ -1531,9 +1633,11 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
 
             # Status icon
             status_icon = (
-                "✓"
+                status_icon_completed
                 if status in ("completed", "force_stopped")
-                else "⚠" if status == "resumed" else "✗"
+                else status_icon_resumed
+                if status == "resumed"
+                else status_icon_interrupted
             )
 
             # Graph Color
@@ -1543,9 +1647,19 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             # Add energy if available to help identify
             energy = ""
             if "total_energy_kwh" in c:
-                energy = f" | {c['total_energy_kwh']:.3f} kWh"
+                energy = await self._t(
+                    "options.label.energy_suffix",
+                    energy=f"{c['total_energy_kwh']:.3f}",
+                )
 
-            label = f"{color_emoji} {status_icon} {start} - {duration_min}m{energy}"
+            label = await self._t(
+                "options.label.cleanup_cycle_label",
+                color=color_emoji,
+                status_icon=status_icon,
+                start=start,
+                duration=duration_min,
+                energy=energy,
+            )
             options.append(selector.SelectOptionDict(value=c["id"], label=label))
 
         return self.async_show_form(
@@ -1646,17 +1760,21 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             # Build Per-Profile Section
             # Headers: Count | Avg | Min | Max | Energy | Consistency | Last Run
             # New: Energy (Avg) | Energy (Total)
-            table_header = "| Count | Avg | Min | Max | Energy (Avg) | Energy (Total) | Consist. | Last Run |"
-            table_sep = "| --- | --- | --- | --- | --- | --- | --- | --- |"
-            table_row = (
-                f"| {count} | {avg}m | {mn}m | {mx}m | {kwh} kWh | {total_kwh} kWh "
-                f"| {consistency} | {last_run} |"
+            table_header = await self._t("options.label.profile_stats_table_header")
+            table_sep = await self._t("options.label.profile_stats_table_sep")
+            table_row = await self._t(
+                "options.label.profile_stats_table_row",
+                count=count,
+                avg=avg,
+                min=mn,
+                max=mx,
+                energy_avg=kwh,
+                energy_total=total_kwh,
+                consistency=consistency,
+                last_run=last_run,
             )
 
-            legend = (
-                "> **Graph Legend**: The blue band represents the minimum and maximum power "
-                "draw range observed. The line shows the average power curve."
-            )
+            legend = await self._t("options.label.profile_stats_legend")
 
             section = (
                 f"## {name}\n{table_header}\n{table_sep}\n{table_row}\n\n"
@@ -1664,7 +1782,11 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             )
             sections.append(section)
 
-        content = "\n\n---\n\n".join(sections) if sections else "No profiles found."
+        content = (
+            "\n\n---\n\n".join(sections)
+            if sections
+            else await self._t("options.label.no_profiles_found")
+        )
 
         return self.async_show_form(
             step_id="profile_stats",
@@ -1711,14 +1833,23 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         cycles = store.get_past_cycles()[-20:]
 
         cycle_options = [
-            selector.SelectOptionDict(value="none", label="(No reference cycle)")
+            selector.SelectOptionDict(
+                value="none",
+                label=await self._t("options.label.no_reference_cycle_option"),
+            )
         ]
+        unlabeled_label = await self._t("options.label.unlabeled")
         for c in reversed(cycles):
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
             duration_min = int(c["duration"] / 60)
-            prof = c.get("profile_name") or "Unlabeled"
-            label = f"{start} - {duration_min}m - {prof}"
+            prof = c.get("profile_name") or unlabeled_label
+            label = await self._t(
+                "options.label.cycle_label",
+                start=start,
+                duration=duration_min,
+                profile=prof,
+            )
             cycle_options.append(selector.SelectOptionDict(value=c["id"], label=label))
 
         return self.async_show_form(
@@ -1767,7 +1898,12 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         for p in profiles:
             count = p["cycle_count"]
             duration_min = int(p["avg_duration"] / 60) if p["avg_duration"] else 0
-            label = f"{p['name']} ({count} cycles, ~{duration_min}m avg)"
+            label = await self._t(
+                "options.label.profile_option_avg",
+                name=p["name"],
+                count=count,
+                duration=duration_min,
+            )
             options.append(selector.SelectOptionDict(value=p["name"], label=label))
 
         return self.async_show_form(
@@ -1864,7 +2000,12 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         for p in profiles:
             count = p["cycle_count"]
             duration_min = int(p["avg_duration"] / 60) if p["avg_duration"] else 0
-            label = f"{p['name']} ({count} cycles, ~{duration_min}m avg)"
+            label = await self._t(
+                "options.label.profile_option_avg",
+                name=p["name"],
+                count=count,
+                duration=duration_min,
+            )
             options.append(selector.SelectOptionDict(value=p["name"], label=label))
 
         return self.async_show_form(
@@ -1902,7 +2043,9 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             ),
             description_placeholders={
                 "profile_name": self._selected_profile,
-                "warning": "⚠️ This will permanently delete the profile.",
+                "warning": await self._t(
+                    "options.label.delete_profile_warning"
+                ),
             },
         )
 
@@ -1950,9 +2093,10 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                 }
             ),
             description_placeholders={
-                "info": (
-                    f"Found {total_count} total cycles. "
-                    f"Profiles: {', '.join(p['name'] for p in profiles)}"
+                "info": await self._t(
+                    "options.label.auto_label_info",
+                    count=total_count,
+                    profiles=", ".join(p["name"] for p in profiles),
                 )
             },
         )
@@ -1969,19 +2113,33 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
 
         # Build readable options with status
         options = []
+        unlabeled_label = await self._t("options.label.unlabeled")
+        status_icon_completed = await self._t("options.label.status_icon_completed")
+        status_icon_resumed = await self._t("options.label.status_icon_resumed")
+        status_icon_interrupted = await self._t(
+            "options.label.status_icon_interrupted"
+        )
         for c in reversed(cycles):
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
             duration_min = int(c["duration"] / 60)
-            prof = c.get("profile_name") or "Unlabeled"
+            prof = c.get("profile_name") or unlabeled_label
             status = c.get("status", "completed")
             # ✓ = completed/force_stopped (natural end), ⚠ = resumed, ✗ = interrupted (user stopped)
             status_icon = (
-                "✓"
+                status_icon_completed
                 if status in ("completed", "force_stopped")
-                else "⚠" if status == "resumed" else "✗"
+                else status_icon_resumed
+                if status == "resumed"
+                else status_icon_interrupted
             )
-            label = f"[{status_icon}] {start} - {duration_min}m - {prof}"
+            label = await self._t(
+                "options.label.cycle_status_label",
+                status_icon=status_icon,
+                start=start,
+                duration=duration_min,
+                profile=prof,
+            )
             options.append(selector.SelectOptionDict(value=c["id"], label=label))
 
         if not options:
@@ -2016,19 +2174,33 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
 
         # Build readable options with status
         options = []
+        unlabeled_label = await self._t("options.label.unlabeled")
+        status_icon_completed = await self._t("options.label.status_icon_completed")
+        status_icon_resumed = await self._t("options.label.status_icon_resumed")
+        status_icon_interrupted = await self._t(
+            "options.label.status_icon_interrupted"
+        )
         for c in reversed(cycles):
             dt = dt_util.parse_datetime(c["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else c["start_time"]
             duration_min = int(c["duration"] / 60)
-            prof = c.get("profile_name") or "Unlabeled"
+            prof = c.get("profile_name") or unlabeled_label
             status = c.get("status", "completed")
             # ✓ = completed/force_stopped (natural end), ⚠ = resumed, ✗ = interrupted (user stopped)
             status_icon = (
-                "✓"
+                status_icon_completed
                 if status in ("completed", "force_stopped")
-                else "⚠" if status == "resumed" else "✗"
+                else status_icon_resumed
+                if status == "resumed"
+                else status_icon_interrupted
             )
-            label = f"[{status_icon}] {start} - {duration_min}m - {prof}"
+            label = await self._t(
+                "options.label.cycle_status_label",
+                status_icon=status_icon,
+                start=start,
+                duration=duration_min,
+                profile=prof,
+            )
             options.append(selector.SelectOptionDict(value=c["id"], label=label))
 
         if not options:
@@ -2055,7 +2227,9 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                 }
             ),
             description_placeholders={
-                "warning": "⚠️ This will permanently delete the selected cycle"
+                "warning": await self._t(
+                    "options.label.delete_cycle_warning"
+                )
             },
         )
 
@@ -2109,14 +2283,23 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         profiles = store.list_profiles()
         profile_options = [
             selector.SelectOptionDict(
-                value="__create_new__", label="➕ Create New Profile"
+                value="__create_new__",
+                label=await self._t("options.label.create_new_profile"),
             ),
-            selector.SelectOptionDict(value="__remove_label__", label="🗑️ Remove Label"),
+            selector.SelectOptionDict(
+                value="__remove_label__",
+                label=await self._t("options.label.remove_label"),
+            ),
         ]
         for p in profiles:
             count = p["cycle_count"]
             duration_min = int(p["avg_duration"] / 60) if p["avg_duration"] else 0
-            label = f"{p['name']} ({count} cycles, ~{duration_min}m)"
+            label = await self._t(
+                "options.label.profile_option",
+                name=p["name"],
+                count=count,
+                duration=duration_min,
+            )
             profile_options.append(
                 selector.SelectOptionDict(value=p["name"], label=label)
             )
@@ -2135,8 +2318,15 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             dt = dt_util.parse_datetime(cycle["start_time"])
             start = dt_util.as_local(dt).strftime("%Y-%m-%d %H:%M") if dt else cycle["start_time"]
             duration_min = int(cycle["duration"] / 60)
-            current_label = cycle.get("profile") or "Unlabeled"
-            cycle_info = f"Cycle: {start}, {duration_min}m, Current: {current_label}"
+            current_label = cycle.get("profile") or await self._t(
+                "options.label.unlabeled"
+            )
+            cycle_info = await self._t(
+                "options.label.cycle_info",
+                start=start,
+                duration=duration_min,
+                profile=current_label,
+            )
 
         schema = {
             vol.Required(
@@ -2176,7 +2366,11 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             )
             count_merged = stats.get("merged_cycles", 0)
             count_split = stats.get("split_cycles", 0)
-            msg = f"Merged: {count_merged}, Split: {count_split}"
+            msg = await self._t(
+                "options.label.post_process_result",
+                merged=count_merged,
+                split=count_split,
+            )
 
             return self.async_create_entry(
                 title="",
@@ -2264,20 +2458,20 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
 
         options = {}
         if is_recording:
-            options["refresh_status"] = "Refresh Status"
-            options["stop_recording"] = "Stop Recording (Save & Process)"
-            status = "ACTIVE"
+            options["refresh_status"] = True
+            options["stop_recording"] = True
+            status = await self._t("options.label.record_status_active")
             duration = int(manager.recorder.current_duration)
             samples = len(getattr(manager.recorder, "_buffer", []))
         else:
-            options["start_recording"] = "Start New Recording"
-            status = "STOPPED"
+            options["start_recording"] = True
+            status = await self._t("options.label.record_status_stopped")
             duration = 0
             samples = 0
 
             if has_last_run:
-                options["process_recording"] = "Process Last Recording (Trim & Save)"
-                options["discard_recording"] = "Discard Last Recording"
+                options["process_recording"] = True
+                options["discard_recording"] = True
 
                 last_run = manager.recorder.last_run
                 samples = len(last_run.get("data", []))
@@ -2285,13 +2479,23 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                     start = dt_util.parse_datetime(last_run["start_time"])
                     end = dt_util.parse_datetime(last_run["end_time"])
                     duration = int((end - start).total_seconds())
-                    status = "READY TO PROCESS"
+                    status = await self._t("options.label.record_status_ready")
                 except Exception:  # pylint: disable=broad-exception-caught
                     pass
 
         return self.async_show_form(
             step_id="record_cycle",
-            data_schema=vol.Schema({vol.Required("action"): vol.In(options)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("action"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=list(options.keys()),
+                            translation_key="record_cycle_action",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
             description_placeholders={
                 "status": status,
                 "duration": str(duration),
@@ -2440,11 +2644,8 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             ),
             vol.Required("save_mode", default="existing_profile"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                         {"value": "new_profile", "label": "Create New Profile"},
-                         {"value": "existing_profile", "label": "Add to Existing Profile"},
-                         {"value": "discard", "label": "Discard Recording"},
-                    ],
+                    options=["new_profile", "existing_profile", "discard"],
+                    translation_key="record_process_mode",
                     mode=selector.SelectSelectorMode.LIST
                 )
             ),
@@ -2511,7 +2712,9 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
 
         for item in sorted_pending:
             cid = item.get("cycle_id", "unknown")
-            prof = item.get("detected_profile", "Unknown")
+            prof = item.get(
+                "detected_profile", await self._t("options.label.unknown_profile")
+            )
             conf = item.get("confidence", 0.0)
             created_raw = item.get("created_at", "")
             
@@ -2529,7 +2732,12 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                     pass
 
             # Format label
-            label = f"{prof} ({int(conf*100)}%) - {t_str}"
+            label = await self._t(
+                "options.label.feedback_item_label",
+                profile=prof,
+                confidence=int(conf * 100),
+                timestamp=t_str,
+            )
             options.append(selector.SelectOptionDict(value=cid, label=label))
 
         return self.async_show_form(
@@ -2607,7 +2815,9 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
             return await self.async_step_init()
 
         # Prepare form
-        detected_profile = item.get("detected_profile", "Unknown")
+        detected_profile = item.get(
+            "detected_profile", await self._t("options.label.unknown_profile")
+        )
         confidence = item.get("confidence", 0.0)
         est = item.get("estimated_duration", 0)
         act = item.get("actual_duration", 0)
@@ -2616,12 +2826,6 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
         profiles.sort(key=profile_sort_key)
         
         # Action options
-        action_options = [
-            selector.SelectOptionDict(value="confirm", label="✓ Confirm (detection was correct)"),
-            selector.SelectOptionDict(value="correct", label="✎ Correct (change profile/duration)"),
-            selector.SelectOptionDict(value="dismiss", label="✕ Dismiss (ignore this feedback)"),
-        ]
-        
         return self.async_show_form(
             step_id="resolve_feedback",
             description_placeholders={
@@ -2634,7 +2838,8 @@ Joining {len(cycles_to_merge)} cycles. Gaps will be filled with 0W readings.
                 {
                     vol.Required("action", default="confirm"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=action_options,
+                            options=["confirm", "correct", "dismiss"],
+                            translation_key="feedback_action",
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     ),
