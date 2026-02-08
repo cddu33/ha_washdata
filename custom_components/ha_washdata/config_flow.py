@@ -135,12 +135,46 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # pylint: disable=a
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._user_input: dict[str, Any] = {}
+        self._selector_translations: dict[str, str] | None = None
 
-    def _get_schema(
-        self, user_input: dict[str, Any] | None = None  # pylint: disable=unused-argument
-    ) -> vol.Schema:
-        """Get the configuration schema."""
-        return STEP_USER_DATA_SCHEMA
+    async def _async_get_selector_translations(self) -> dict[str, str]:
+        """Return cached selector translations for config flow."""
+        if self._selector_translations is None:
+            self._selector_translations = await translation_helper.async_get_translations(
+                self.hass,
+                self.hass.config.language,
+                "selector",
+                [DOMAIN],
+            )
+        return self._selector_translations
+
+    async def _build_user_schema(self) -> vol.Schema:
+        """Build user step schema with translated device types."""
+        translations = await self._async_get_selector_translations()
+        options = []
+        for key, label in DEVICE_TYPES.items():
+            translated = translations.get(
+                f"component.{DOMAIN}.selector.device_type.{key}", label
+            )
+            options.append(selector.SelectOptionDict(value=key, label=translated))
+
+        return vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
+                vol.Required(
+                    CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor"),
+                ),
+                vol.Optional(CONF_MIN_POWER, default=DEFAULT_MIN_POWER): vol.Coerce(float),
+            }
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None  # pylint: disable=unused-argument
@@ -149,7 +183,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # pylint: disable=a
         errors: dict[str, str] = {}
         if user_input is None:
             return self.async_show_form(
-                step_id="user", data_schema=self._get_schema(), errors=errors
+                step_id="user",
+                data_schema=await self._build_user_schema(),
+                errors=errors,
             )
 
         # Validate input
@@ -163,7 +199,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # pylint: disable=a
 
         if errors:
             return self.async_show_form(
-                step_id="user", data_schema=self._get_schema(user_input), errors=errors
+                step_id="user",
+                data_schema=await self._build_user_schema(),
+                errors=errors,
             )
 
         # Store user input and proceed to profile creation
@@ -234,6 +272,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._editor_selected_ids: list[str] = []
         self._editor_split_gap: int = 900
         self._translations: dict[str, str] | None = None
+        self._selector_translations: dict[str, str] | None = None
 
     async def _async_get_translations(self) -> dict[str, str]:
         """Return cached translations for options flow."""
@@ -256,6 +295,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             except Exception:  # pylint: disable=broad-exception-caught
                 return text
         return text
+
+    async def _async_get_selector_translations(self) -> dict[str, str]:
+        """Return cached selector translations for options flow."""
+        if self._selector_translations is None:
+            self._selector_translations = await translation_helper.async_get_translations(
+                self.hass,
+                self.hass.config.language,
+                "selector",
+                [DOMAIN],
+            )
+        return self._selector_translations
+
+    async def _selector_label(
+        self, selector_key: str, option: str, fallback: str | None = None
+    ) -> str:
+        """Translate a selector option label."""
+        translations = await self._async_get_selector_translations()
+        key = f"component.{DOMAIN}.selector.{selector_key}.{option}"
+        return translations.get(key, fallback or option)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None  # pylint: disable=unused-argument
@@ -359,6 +417,30 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             current_device_type, DEFAULT_OFF_DELAY
         )
 
+        device_type_options = []
+        for key, label in DEVICE_TYPES.items():
+            device_type_options.append(
+                selector.SelectOptionDict(
+                    value=key,
+                    label=await self._selector_label("device_type", key, label),
+                )
+            )
+
+        notify_event_options = [
+            selector.SelectOptionDict(
+                value=NOTIFY_EVENT_START,
+                label=await self._selector_label(
+                    "notify_events", NOTIFY_EVENT_START
+                ),
+            ),
+            selector.SelectOptionDict(
+                value=NOTIFY_EVENT_FINISH,
+                label=await self._selector_label(
+                    "notify_events", NOTIFY_EVENT_FINISH
+                ),
+            ),
+        ]
+
         # Base schema with essential options
         schema = {
             # --- Device Configuration (Top Priority) ---
@@ -367,8 +449,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 default=get_val(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=list(DEVICE_TYPES),
-                    translation_key="device_type",
+                    options=device_type_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             ),
@@ -402,8 +483,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 default=list(get_val(CONF_NOTIFY_EVENTS, [])),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[NOTIFY_EVENT_START, NOTIFY_EVENT_FINISH],
-                    translation_key="notify_events",
+                    options=notify_event_options,
                     multiple=True,
                     mode=selector.SelectSelectorMode.LIST,
                 )
@@ -879,8 +959,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required("action"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=["split", "merge"],
-                            translation_key="interactive_editor_action",
+                            options=[
+                                selector.SelectOptionDict(
+                                    value="split",
+                                    label=await self._selector_label(
+                                        "interactive_editor_action", "split"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="merge",
+                                    label=await self._selector_label(
+                                        "interactive_editor_action", "merge"
+                                    ),
+                                ),
+                            ],
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     )
@@ -1187,12 +1279,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required("action"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                "reprocess_history",
-                                "clear_debug_data",
-                                "wipe_history",
-                                "export_import",
+                                selector.SelectOptionDict(
+                                    value="reprocess_history",
+                                    label=await self._selector_label(
+                                        "diagnostics_action", "reprocess_history"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="clear_debug_data",
+                                    label=await self._selector_label(
+                                        "diagnostics_action", "clear_debug_data"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="wipe_history",
+                                    label=await self._selector_label(
+                                        "diagnostics_action", "wipe_history"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="export_import",
+                                    label=await self._selector_label(
+                                        "diagnostics_action", "export_import"
+                                    ),
+                                ),
                             ],
-                            translation_key="diagnostics_action",
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     )
@@ -1304,8 +1415,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                     "mode", default=mode
                                 ): selector.SelectSelector(
                                     selector.SelectSelectorConfig(
-                                        options=["export", "import"],
-                                        translation_key="export_import_mode",
+                                        options=[
+                                            selector.SelectOptionDict(
+                                                value="export",
+                                                label=await self._selector_label(
+                                                    "export_import_mode", "export"
+                                                ),
+                                            ),
+                                            selector.SelectOptionDict(
+                                                value="import",
+                                                label=await self._selector_label(
+                                                    "export_import_mode", "import"
+                                                ),
+                                            ),
+                                        ],
                                     )
                                 ),
                                 vol.Optional(
@@ -1326,8 +1449,20 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required("mode", default="export"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=["export", "import"],
-                            translation_key="export_import_mode",
+                            options=[
+                                selector.SelectOptionDict(
+                                    value="export",
+                                    label=await self._selector_label(
+                                        "export_import_mode", "export"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="import",
+                                    label=await self._selector_label(
+                                        "export_import_mode", "import"
+                                    ),
+                                ),
+                            ],
                         )
                     ),
                     vol.Optional(
@@ -1405,12 +1540,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required("action"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                "auto_label_cycles",
-                                "select_cycle_to_label",
-                                "select_cycle_to_delete",
-                                "interactive_editor",
+                                selector.SelectOptionDict(
+                                    value="auto_label_cycles",
+                                    label=await self._selector_label(
+                                        "manage_cycles_action", "auto_label_cycles"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="select_cycle_to_label",
+                                    label=await self._selector_label(
+                                        "manage_cycles_action", "select_cycle_to_label"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="select_cycle_to_delete",
+                                    label=await self._selector_label(
+                                        "manage_cycles_action", "select_cycle_to_delete"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="interactive_editor",
+                                    label=await self._selector_label(
+                                        "manage_cycles_action", "interactive_editor"
+                                    ),
+                                ),
                             ],
-                            translation_key="manage_cycles_action",
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     )
@@ -1468,13 +1622,37 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required("action"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                "create_profile",
-                                "edit_profile",
-                                "delete_profile",
-                                "profile_stats",
-                                "cleanup_profile",
+                                selector.SelectOptionDict(
+                                    value="create_profile",
+                                    label=await self._selector_label(
+                                        "manage_profiles_action", "create_profile"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="edit_profile",
+                                    label=await self._selector_label(
+                                        "manage_profiles_action", "edit_profile"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="delete_profile",
+                                    label=await self._selector_label(
+                                        "manage_profiles_action", "delete_profile"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="profile_stats",
+                                    label=await self._selector_label(
+                                        "manage_profiles_action", "profile_stats"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="cleanup_profile",
+                                    label=await self._selector_label(
+                                        "manage_profiles_action", "cleanup_profile"
+                                    ),
+                                ),
                             ],
-                            translation_key="manage_profiles_action",
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     )
@@ -2489,8 +2667,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required("action"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=list(options.keys()),
-                            translation_key="record_cycle_action",
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=key,
+                                    label=await self._selector_label(
+                                        "record_cycle_action", key
+                                    ),
+                                )
+                                for key in options
+                            ],
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     )
@@ -2644,8 +2829,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             ),
             vol.Required("save_mode", default="existing_profile"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=["new_profile", "existing_profile", "discard"],
-                    translation_key="record_process_mode",
+                    options=[
+                        selector.SelectOptionDict(
+                            value="new_profile",
+                            label=await self._selector_label(
+                                "record_process_mode", "new_profile"
+                            ),
+                        ),
+                        selector.SelectOptionDict(
+                            value="existing_profile",
+                            label=await self._selector_label(
+                                "record_process_mode", "existing_profile"
+                            ),
+                        ),
+                        selector.SelectOptionDict(
+                            value="discard",
+                            label=await self._selector_label(
+                                "record_process_mode", "discard"
+                            ),
+                        ),
+                    ],
                     mode=selector.SelectSelectorMode.LIST
                 )
             ),
@@ -2838,8 +3041,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 {
                     vol.Required("action", default="confirm"): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=["confirm", "correct", "dismiss"],
-                            translation_key="feedback_action",
+                            options=[
+                                selector.SelectOptionDict(
+                                    value="confirm",
+                                    label=await self._selector_label(
+                                        "feedback_action", "confirm"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="correct",
+                                    label=await self._selector_label(
+                                        "feedback_action", "correct"
+                                    ),
+                                ),
+                                selector.SelectOptionDict(
+                                    value="dismiss",
+                                    label=await self._selector_label(
+                                        "feedback_action", "dismiss"
+                                    ),
+                                ),
+                            ],
                             mode=selector.SelectSelectorMode.LIST,
                         )
                     ),
